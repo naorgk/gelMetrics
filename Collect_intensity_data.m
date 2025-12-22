@@ -6,11 +6,12 @@
 % intensity of its surrounding environment) from each granule is collected
 % and saved for further analysis.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-clear; close all;
+clearvars; 
+close all;
+clc;
 
 % Path to folder containing tif and mat files
-% file_path = './8x/green/';
-file_path = './8x/red/';
+file_path = [uigetdir("*", ''), '\'];
 
 % load all .tiff and all .mat files
 tiff_files = dir([file_path,'*.tif']);
@@ -77,5 +78,5 @@ for f = 1:size(tiff_files,1)
 end
 % Intensity signal gathering is done. 
 
-save('PCP_8x_spot.mat','intensity');
-save('PCP_8x_background.mat','background');
+save([file_path, 'data.mat'],'intensity');
+save([file_path, 'background.mat'],'background');
