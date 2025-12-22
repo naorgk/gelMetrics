@@ -1,5 +1,6 @@
 close all;   % Close all open figure windows
-clear;       % Clear workspace
+clearvars;       % Clear workspace
+clc;
 
 % Algorithm Parameters
 movingAverageWindowSpan = 13;             % Moving average window span for signal denoising
@@ -7,12 +8,13 @@ stringencyParameter = 14;                 % Parameter for burst events detection
 timeVecTotal = linspace(0, 60, 360);      % Time steps vector
 
 % Load signal and background data
-% To recreate the figures in the paper please uncomment any of the
-% following signals,backgrounds pairs:
+% StringencyParameter (SP) and truncation percentile (GOF) for replicating the exact plots: 
+% [InVitro 100:1/10:1 - SP=12,GOF=10] ; [InVitro 1:1 - SP=12,GOF=15] ; [PP7/PP7-FUS 4x - SP=10,GOF=15]; [PP7/PP7-FUS 30x - SP=12,GOF=10] ; [Qb - SP=14,GOF=15]
+% To recreate the figures in the paper please uncomment any of the following signals-backgrounds pairs:
 
 % RNA-protein granules formed with 1:1 protein to RNA ratio
-signals = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_data.mat'));
-backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_background.mat'));
+% signals = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_data.mat'));
+% backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_background.mat'));
 
 % RNA-protein granules formed with 10:1 protein to RNA ratio
 % signals = struct2cell(load('./in_vitro_experiments/protein_RNA_10_1_data.mat'));
@@ -23,12 +25,28 @@ backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_backgroun
 % backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_100_1_background.mat'));
 
 % In vivo granules formed with Qb-5x
-% signals = struct2cell(load('./in_vivo_experiments/5Qb_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/5Qb_background.mat'));
+signals = struct2cell(load('../SpotAndBackgroundFiles/5Qb_data.mat'));
+backgrounds = struct2cell(load('../SpotAndBackgroundFiles/5Qb_background.mat'));
 
 % In vivo granules formed with Qb-10x
 % signals = struct2cell(load('./in_vivo_experiments/10Qb_data.mat'));
 % backgrounds = struct2cell(load('./in_vivo_experiments/10Qb_background.mat'));
+
+% In vivo granules formed with PP7 & QCP-5x/PCP-4x
+% signals = struct2cell(load('./in_vivo_experiments/4PP7_data.mat'));
+% backgrounds = struct2cell(load('./in_vivo_experiments/4PP7_background.mat'));
+
+% In vivo granules formed with PP7-FUS & QCP-5x/PCP-4x
+% signals = struct2cell(load('./in_vivo_experiments/4PP7-FUS_data.mat'));
+% backgrounds = struct2cell(load('./in_vivo_experiments/4PP7-FUS_background.mat'));
+
+% In vivo granules formed with PP7 & PCP-30x
+% signals = struct2cell(load('./in_vivo_experiments/30PP7_data.mat'));
+% backgrounds = struct2cell(load('./in_vivo_experiments/30PP7_background.mat'));
+
+% In vivo granules formed with PP7-FUS & PCP-30x
+% signals = struct2cell(load('./in_vivo_experiments/30PP7-FUS_data.mat'));
+% backgrounds = struct2cell(load('./in_vivo_experiments/30PP7-FUS_background.mat'));
 
 
 % Signal plotting controls
@@ -39,14 +57,26 @@ backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_backgroun
 plotMin = 0;
 plotMax = 0;
 
-
 signals = signals{1};
 backgrounds = backgrounds{1};
-signals = signals(2:end);
-backgrounds = backgrounds(2:end);
 
+if ~iscolumn(signals)
+    signals = signals(2:end)';
+else
+    signals = signals(2:end);
+end
+
+if ~iscolumn(backgrounds)
+    backgrounds = backgrounds(2:end)';
+else
+    backgrounds = backgrounds(2:end);
+end
 
 % Perform analysis
+events_d = dictionary;
+k_d = dictionary;
+lam_d = dictionary;
+MSE_d = dictionary;
 [timeBetweenPos, timeBetweenNeg, ampPos, ampNeg, ampVar, eventsPerSignal] = ...
         analysis(signals, backgrounds, timeVecTotal, ...
         movingAverageWindowSpan, stringencyParameter, plotMin, plotMax);
@@ -55,6 +85,10 @@ backgrounds = backgrounds(2:end);
 ampPos = ampPos(2:end);
 ampNeg = ampNeg(2:end);
 ampVar = ampVar(2:end);
+
+fprintf('  • Found %d positive burst events: \n', length(ampPos));
+fprintf('  • Found %d unclassified events: \n', length(ampVar));
+fprintf('  • Found %d negative burst events: \n', length(ampNeg));
 
 timeBetweenPos = timeBetweenPos(2:end);
 timeBetweenNeg = timeBetweenNeg(2:end);    
@@ -88,9 +122,39 @@ ylabel('Time [min]');
 title('Time between burst events');
 
 
-lambda = 1:10;
-K0Vector = 1:500;
+lambda = 1:5;
+K0Vector = 1:500; % Experimental data is noisy by nature, using standard errors will lead to unreasonably large grids
+
 % Poisson analysis on positive amplitudes
-modifiedPoissonFit(rmoutliers(ampPos,"percentiles",[0,90]),lambda,K0Vector,10,'Positive amplitudes');
+[~, ~, ~, ~, ~, w_score] = modifiedPoissonFit(rmoutliers(ampPos,"percentiles",[0,90]),lambda,K0Vector,10,'Positive amplitudes');
+
+% Final ranking of lambdas
+for ll = 1:length(lambda)
+    [min_w_vec{ll}, min_w_k0{ll}] = min(w_score(ll,:));
+end
+
+[min_w_scores, min_w_idx] = sort(cell2mat(min_w_vec));
+min_w_lambda = lambda(min_w_idx);
+min_w_k0 = min_w_k0(min_w_idx);
+
+fprintf('Positive amplitudes results:\n')
+for ww = 1:length(lambda)
+    fprintf('  #%d: lambda=%d, k0=%d, WS=%g\n', [ww,min_w_lambda(ww),min_w_k0{ww},round(min_w_scores(ww),2,"significant")]);
+end
+
 % Poisson analysis on negative amplitudes
-modifiedPoissonFit(rmoutliers(abs(ampNeg),"percentiles",[0,90]),lambda,K0Vector,10,'Negative amplitudes');
+[~, ~, ~, ~, ~, w_score] = modifiedPoissonFit(rmoutliers(abs(ampNeg),"percentiles",[0,90]),lambda,K0Vector,10,'Negative amplitudes');
+
+% Final ranking of lambdas
+for ll = 1:length(lambda)
+    [min_w_vec{ll}, min_w_k0{ll}] = min(w_score(ll,:));
+end
+
+[min_w_scores, min_w_idx] = sort(cell2mat(min_w_vec));
+min_w_lambda = lambda(min_w_idx);
+min_w_k0 = min_w_k0(min_w_idx);
+
+fprintf('Negative amplitudes results:\n')
+for ww = 1:length(lambda)
+    fprintf('  #%d: lambda=%d, k0=%d, WS=%g\n', [ww,min_w_lambda(ww),min_w_k0{ww},round(min_w_scores(ww),2,"significant")]);
+end
