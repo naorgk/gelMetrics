@@ -25,8 +25,8 @@ timeVecTotal = linspace(0, 60, 360);      % Time steps vector
 % backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_100_1_background.mat'));
 
 % In vivo granules formed with Qb-5x
-signals = struct2cell(load('../SpotAndBackgroundFiles/5Qb_data.mat'));
-backgrounds = struct2cell(load('../SpotAndBackgroundFiles/5Qb_background.mat'));
+% signals = struct2cell(load('./in_vivo_experiments/5Qb_data.mat'));
+% backgrounds = struct2cell(load('./in_vivo_experiments/5Qb_background.mat'));
 
 % In vivo granules formed with Qb-10x
 % signals = struct2cell(load('./in_vivo_experiments/10Qb_data.mat'));
@@ -158,3 +158,4 @@ fprintf('Negative amplitudes results:\n')
 for ww = 1:length(lambda)
     fprintf('  #%d: lambda=%d, k0=%d, WS=%g\n', [ww,min_w_lambda(ww),min_w_k0{ww},round(min_w_scores(ww),2,"significant")]);
 end
+
