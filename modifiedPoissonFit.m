@@ -53,7 +53,11 @@ for j = 1:length(lambda)
         end
         
         MSE(j,i) = goodnessOfFit(yq_thres(~isnan(yq_thres)),binCounts_thres(~isnan(yq_thres))./max(binCounts_thres),'MSE');
-        QQ_error(j,i) = sqrt(mean((yq_thres*max(binCounts_thres)./max(yq_thres) - nn_full_thres).^2));
+        n = numel(nn_full_thres);
+        p = ((1:n) - 0.5) / n;
+        q1 = quantile(nn_full_thres, p);
+        q2 = quantile(yq_thres*max(binCounts_thres)./max(yq_thres), p);
+        QQ_error(j,i) = sqrt(mean((q2 - q1).^2));
         [~,~,KS_dist(j,i)] = kstest2(yq_thres*max(binCounts_thres)./max(yq_thres), nn_full_thres, 0.01); % Two-sample Kolmogorov-Smirnov test
     end
 end
@@ -131,6 +135,7 @@ for i = 1:length(lambda)
     title('Truncated CDF plot');
     legend('Experiment','Estimate');
 end
+
 
 
 end
