@@ -12,6 +12,7 @@ numTracks = 1000;                                % Number of tracks to simulate
 t = linspace(0, 60, 360);                        % Time vector for simulation
 noiseStd = 40;                                   % Standard deviation of noise
 expConst = 0.0005;                               % Exponential constant for photobleaching
+lambda_sim = 2;                                  % Poisson parameter
 
 % generateSim function generates simulated trajectories
 % Function recieces as input: 
@@ -22,13 +23,14 @@ expConst = 0.0005;                               % Exponential constant for phot
 % noiseStd - standard deviation of the gaussian noise component
 % lambda - Poisson parameter for the bursty signals (only relevant for
 % simType = 3)
-[signals, backgrounds] = generateSim(numTracks,numel(t),simType,expConst,noiseStd,2);
+[signals, backgrounds] = generateSim(numTracks,numel(t),simType,expConst,noiseStd,lambda_sim);
 
 % Signal plotting controls
 % To plot a few sample signals you can change these variables
 % plotMin is the first signal plotted
 % plotMax is the last signal plotted
 % Example: to plot the first 5 signals change plotMax to 5
+
 plotMin = 0;
 plotMax = 5;
 
@@ -43,6 +45,7 @@ eventsPerSignalTotal = cell(length(stringencyParameter), 1);       % Total event
 
 % Loop through each match probability
 for SP = 1:length(stringencyParameter)
+    
     % Perform analysis
     [timeBetweenPos, timeBetweenNeg, ampPos, ampNeg, ampVar, eventsPerSignal] = ...
         analysis(signals, backgrounds, timeVecTotal, ...
@@ -90,13 +93,22 @@ for SP = 1:length(stringencyParameter)
     xlabel('Amplitudes [A.U]');
     
     
-    lambda = 1:10;
-    K0Vector = 1:500;
+    lambda = 1:5;
+    
     % Poisson analysis on positive amplitudes
+    khat = var(abs(ampPos))/mean(abs(ampPos));
+    khat_SEhat_coeff = sqrt(2)/sqrt(length(ampPos)) ;
+    khat_SEhat = khat * khat_SEhat_coeff;
+    K0Vector = floor(khat - 8 * khat_SEhat):ceil(khat + 18 * khat_SEhat); % The k0 lookup grid is integers spanning >20 standard errors from the k0 estimator, the grid is not symmetrical since we noticed bias towards higher lambdas during simulations
     modifiedPoissonFit(ampPos,lambda,K0Vector,10,'Positive amplitudes');
+    
+    
     % Poisson analysis on negative amplitudes
+    khat = var(abs(ampNeg))/mean(abs(ampNeg));
+    khat_SEhat_coeff = sqrt(2)/sqrt(length(ampNeg)) ;
+    khat_SEhat = khat * khat_SEhat_coeff;
+    K0Vector = floor(khat - 8 * khat_SEhat):ceil(khat + 18 * khat_SEhat); % The k0 lookup grid is integers spanning >20 standard errors from the k0 estimator, the grid is not symmetrical since we noticed bias towards higher lambdas during simulations
     modifiedPoissonFit(abs(ampNeg),lambda,K0Vector,10,'Negative amplitudes');
 
 end
-
 
