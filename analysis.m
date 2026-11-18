@@ -2,10 +2,18 @@
 % measured background signal. It then locates activity bursts in the signal
 % and classifies them to positive, negative or unclassified.
 
-function [timeBetweenPos,timeBetweenNeg,ampPos,ampNeg,ampVar,eventsPerSignal] = ...
+function [timeBetweenPos,timeBetweenNeg,ampPos,ampNeg,ampVar,eventsPerSignal,segInfo] = ...
     analysis(signals,background,timeVecTotal,movingAverageWindowSpan,...
     stringencyParameter,plotMin,plotMax)
 
+% segInfo:
+% 1	granule (trace) number
+% 2	direction (+1 / −1)
+% 3	first frame of burst
+% 4	last frame of burst
+% 5	amplitude (burst size)
+% 6 level at the start
+% 7 level at the end
 
 % Initialize variables for data aggregation
 timeBetweenPos = -Inf;
@@ -16,6 +24,11 @@ ampNeg = -Inf;
 ampVar = -Inf;
 
 eventsPerSignal = [];
+% segInfo (optional 7th output, does not change the other outputs): one row per
+% classified burst: [signal index, sign (+1/-1), first frame, last frame,
+% amplitude, fitted level at the first frame, fitted level at the last frame].
+% Used to express each burst as a fraction of the granule intensity before it.
+segInfo = zeros(0,7);
 
 for i = 1:size(signals,1)
     % Experimental data is in a cell array due to signals might not having
@@ -35,7 +48,7 @@ for i = 1:size(signals,1)
         currentBackground = currentBackground';
     end
     
-    % Discard experimental signals with less than 15 minutes of data
+    % Discard experimental signals with less than 180 frames (30 min at 10 s/frame)
     if length(currentSignal) < 180
         continue;
     end
@@ -78,10 +91,12 @@ for i = 1:size(signals,1)
         y = polyval(p{tt},x);
         if y(end)-y(1) >= 0 && length(x) >= thresholdPos
             ampPos = [ampPos; y(end)-y(1)];
+            segInfo = [segInfo; i, 1, x(1), x(end), y(end)-y(1), y(1), y(end)];
             posSegmentStart = [posSegmentStart; x(1)];
         end
         if y(end)-y(1) < 0 && length(x) >= thresholdNeg
             ampNeg = [ampNeg; y(end)-y(1)];
+            segInfo = [segInfo; i, -1, x(1), x(end), y(end)-y(1), y(1), y(end)];
             negSegmentStart = [negSegmentStart; x(1)];
         end
     end
@@ -95,7 +110,7 @@ for i = 1:size(signals,1)
         end
         if xVar(end)>length(data)
             xVar = xVar(1:end-1);
-            pVar{tt} = polyfit(xVar,data(startPosValid(tt)+lengthsValid(tt)+1:startPosValid(tt+1))-1,1);
+            pVar{tt} = polyfit(xVar,data(startPosValid(tt)+lengthsValid(tt)+1:startPosValid(tt+1)-2),1);
         else
             pVar{tt} = polyfit(xVar,data(startPosValid(tt)+lengthsValid(tt)+1:startPosValid(tt+1)-1),1);
         end

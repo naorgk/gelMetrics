@@ -4,50 +4,25 @@ clc;
 
 % Algorithm Parameters
 movingAverageWindowSpan = 13;             % Moving average window span for signal denoising
-stringencyParameter = 14;                 % Parameter for burst events detection
-timeVecTotal = linspace(0, 60, 360);      % Time steps vector
+stringencyParameter = 12;                 % Parameter for burst events detection
+timeVecTotal = linspace(0, 60, 361);      % Time steps vector: 361 frames, 60 min at 10 s per frame
+nCopies = 20;                             % Burst-free copies per granule (the noise floor)
+seed = 1;                                 % Random seed of the copies
+moviesAsReplicates = false;               % false: every granule is its own replicate (true means the movies are replicates - which is more adequate for in vitro data)
+
+% Okabe-Ito pallette
+% ORANGE = '#E69F00', GREEN = '#009E73', BLUE = '#0072B2', YELLOW = '#F0E442', RED = '#D55E00', PURPLE = '#CC79A7'
+OKI = ["#E69F00","#009E73","#0072B2","#F0E442","#D55E00","#CC79A7"];
 
 % Load signal and background data
-% StringencyParameter (SP) and truncation percentile (GOF) for replicating the exact plots: 
-% [InVitro 100:1/10:1 - SP=12,GOF=10] ; [InVitro 1:1 - SP=12,GOF=15] ; [PP7/PP7-FUS 4x - SP=10,GOF=15]; [PP7/PP7-FUS 30x - SP=12,GOF=10] ; [Qb - SP=14,GOF=15]
-% To recreate the figures in the paper please uncomment any of the following signals-backgrounds pairs:
+% Every folder contains the four .mat files: data.mat, background.mat, spotsum.mat and movies.mat.
+% in vivo:  'PCP_4x', 'PCP-FUS_4x', 'PCP_30x', 'PCP-FUS_30x', 'QCP_5x', 'QCP_10x'
+% in vitro: 'protein_RNA_1_1', 'protein_RNA_10_1', 'protein_RNA_100_1'
 
-% RNA-protein granules formed with 1:1 protein to RNA ratio
-% signals = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_data.mat'));
-% backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_1_1_background.mat'));
-
-% RNA-protein granules formed with 10:1 protein to RNA ratio
-% signals = struct2cell(load('./in_vitro_experiments/protein_RNA_10_1_data.mat'));
-% backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_10_1_background.mat'));
-
-% RNA-protein granules formed with 100:1 protein to RNA ratio
-% signals = struct2cell(load('./in_vitro_experiments/protein_RNA_100_1_data.mat'));
-% backgrounds = struct2cell(load('./in_vitro_experiments/protein_RNA_100_1_background.mat'));
-
-% In vivo granules formed with Qb-5x
-% signals = struct2cell(load('./in_vivo_experiments/5Qb_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/5Qb_background.mat'));
-
-% In vivo granules formed with Qb-10x
-% signals = struct2cell(load('./in_vivo_experiments/10Qb_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/10Qb_background.mat'));
-
-% In vivo granules formed with PP7 & QCP-5x/PCP-4x
-% signals = struct2cell(load('./in_vivo_experiments/4PP7_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/4PP7_background.mat'));
-
-% In vivo granules formed with PP7-FUS & QCP-5x/PCP-4x
-% signals = struct2cell(load('./in_vivo_experiments/4PP7-FUS_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/4PP7-FUS_background.mat'));
-
-% In vivo granules formed with PP7 & PCP-30x
-% signals = struct2cell(load('./in_vivo_experiments/30PP7_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/30PP7_background.mat'));
-
-% In vivo granules formed with PP7-FUS & PCP-30x
-% signals = struct2cell(load('./in_vivo_experiments/30PP7-FUS_data.mat'));
-% backgrounds = struct2cell(load('./in_vivo_experiments/30PP7-FUS_background.mat'));
-
+dataFolder = './in_vivo_experiments/';
+% dataFolder = './in_vitro_experiments/';
+conditions = {'PCP_4x', 'PCP-FUS_4x', 'PCP_30x', 'PCP-FUS_30x', 'QCP_5x', 'QCP_10x'};
+% conditions = {'protein_RNA_1_1', 'protein_RNA_10_1', 'protein_RNA_100_1'};
 
 % Signal plotting controls
 % To plot a few sample signals you can change these variables
@@ -57,105 +32,149 @@ timeVecTotal = linspace(0, 60, 360);      % Time steps vector
 plotMin = 0;
 plotMax = 0;
 
-signals = signals{1};
-backgrounds = backgrounds{1};
+nCond = numel(conditions);
+M = cell(1, nCond);
+for c = 1:nCond
+    folder = [dataFolder conditions{c} '/'];
+    signals = struct2cell(load([folder 'data.mat']));
+    backgrounds = struct2cell(load([folder 'background.mat']));
+    spotSums = struct2cell(load([folder 'spotsum.mat']));
+    movies = load([folder 'movies.mat']);
 
-if ~iscolumn(signals)
-    signals = signals(2:end)';
-else
-    signals = signals(2:end);
+    signals = signals{1};
+    backgrounds = backgrounds{1};
+    spotSums = spotSums{1};
+
+    % Remove the empty first cell left by the extraction
+    if ~iscolumn(signals)
+        signals = signals(2:end)';
+    else
+        signals = signals(2:end);
+    end
+
+    if ~iscolumn(backgrounds)
+        backgrounds = backgrounds(2:end)';
+    else
+        backgrounds = backgrounds(2:end);
+    end
+
+    if ~iscolumn(spotSums)
+        spotSums = spotSums(2:end)';
+    else
+        spotSums = spotSums(2:end);
+    end
+
+    % Perform analysis
+    [timeBetweenPos, timeBetweenNeg, ampPos, ampNeg, ampVar, eventsPerSignal] = ...
+            analysis(signals, backgrounds, timeVecTotal, ...
+            movingAverageWindowSpan, stringencyParameter, plotMin, plotMax);
+
+    % Remove the -Inf placeholder used to initialize the variable
+    ampPos = ampPos(2:end);
+    ampNeg = ampNeg(2:end);
+    ampVar = ampVar(2:end);
+
+    fprintf('\n%s\n', conditions{c});
+    fprintf('  • Found %d positive burst events: \n', length(ampPos));
+    fprintf('  • Found %d unclassified events: \n', length(ampVar));
+    fprintf('  • Found %d negative burst events: \n', length(ampNeg));
+
+    timeBetweenPos = timeBetweenPos(2:end);
+    timeBetweenNeg = timeBetweenNeg(2:end);
+
+    figure('Name', conditions{c});
+    tiledlayout(1, 3, 'TileSpacing', 'compact');
+
+    nexttile;
+    histogram(ampVar(abs(ampVar)<1500),50);
+    ylabel('Counts');
+    xlabel('Intesity [A.U]');
+    title('Quiescent Amplitudes');
+
+    % Plot histogram of all amplitudes
+    nexttile;
+    histogram(ampVar(abs(ampVar)<3000),'FaceColor','#0072B2','BinWidth',100);
+    hold on;
+    histogram(ampPos(ampPos<3000),'FaceColor','#009E73','BinWidth',100);
+    histogram(ampNeg(abs(ampNeg)<3000),'FaceColor','#E69F00','BinWidth',100);
+    ylabel('Counts'); xlim([-3000,3000])
+    title('Segment amplitudes','FontSize',12);
+    xlabel('Amplitudes [A.U]','FontSize',12);
+
+    % Plot boxplots of durations between burst events
+    nexttile;
+    plot_var = [timeBetweenPos;timeBetweenNeg];
+    group_var = zeros(length(plot_var),1);
+    group_var(1:length(timeBetweenPos))=2;
+    group_var(length(timeBetweenPos)+1:end)=3;
+    boxplot(plot_var,group_var);
+    xticklabels({'Positive','Negative'});
+    ylabel('Time [min]');
+    title('Time between burst events');
+    sgtitle(conditions{c}, 'Interpreter', 'none');
+
+    % Noise-controlled measures: 
+    % the bursts of the granules against the bursts of their burst-free copies, with 95% confidence intervals over replicates
+    % The mean burst size is lambda*k0
+    if moviesAsReplicates
+        replicateOfTrace = movies.movieId;
+    else
+        replicateOfTrace = [];
+    end
+    M{c} = burstMeasures(signals, backgrounds, spotSums, replicateOfTrace, nCopies, seed, ...
+        movingAverageWindowSpan, stringencyParameter, numel(timeVecTotal));
+    
+    fprintf('  %d granules (at least 30 min), %d replicates, %d negative bursts\n', M{c}.nGranules, M{c}.nReplicates, M{c}.nBursts);
+    fprintf('  brightness (median over replicates)  %.0f\n', M{c}.brightness);
+    fprintf('  frame noise (%% of granule)           %.1f\n', M{c}.frameNoise);
+    fprintf('  mean burst size, lambda*k0 (a.u.)    %.0f [%.0f, %.0f]\n', M{c}.meanBurst, M{c}.meanBurst_lo, M{c}.meanBurst_hi);
+    fprintf('  burst size, granules / copies (%%)    %.1f / %.1f\n', M{c}.sizeGranules, M{c}.sizeCopies);
+    fprintf('  burst size beyond noise (%% points)   %.1f [%.1f, %.1f]\n', M{c}.sizeBeyond, M{c}.sizeBeyond_lo, M{c}.sizeBeyond_hi);
+    fprintf('  turnover beyond noise (%%/h)          %.1f [%.1f, %.1f]\n', M{c}.turnover, M{c}.turnover_lo, M{c}.turnover_hi);
+    fprintf('  net change beyond bleaching (1e-2/h) %.1f [%.1f, %.1f]\n', M{c}.net, M{c}.net_lo, M{c}.net_hi);
+    fprintf('  first vs second 30 min: turnover %.1f -> %.1f (p = %.3f), net %.1f -> %.1f (p = %.3f)\n', ...
+        M{c}.turnover1, M{c}.turnover2, M{c}.pHalvesTurnover, M{c}.net1, M{c}.net2, M{c}.pHalvesNet);
 end
 
-if ~iscolumn(backgrounds)
-    backgrounds = backgrounds(2:end)';
-else
-    backgrounds = backgrounds(2:end);
+% Burst size distributions: granules (red bars) and their burst-free copies (black outline)
+figure('Name', 'Burst sizes', 'Units', 'inches', 'Position', [1 1 2.4 * min(nCond, 3) 2.3 * ceil(nCond / 3)], 'Color', 'w');
+tiledlayout(ceil(nCond / 3), min(nCond, 3), 'TileSpacing', 'compact', 'Padding', 'compact');
+edges = 0:2.5:60;
+for c = 1:nCond
+    nexttile; hold on;
+    fracReal = 100 * vertcat(M{c}.fracReal{:});
+    fracCopy = 100 * vertcat(M{c}.fracCopy{:});
+    histogram(min(fracReal, 59.99), edges, 'Normalization', 'probability', 'FaceColor', [1 0.4 0.4], 'EdgeColor', 'none', 'FaceAlpha', 1);
+    histogram(min(fracCopy, 59.99), edges, 'Normalization', 'probability', 'DisplayStyle', 'stairs', 'EdgeColor', [0.25 0.25 0.25], 'LineWidth', 1);
+    xlim([0 60]);
+    xlabel('Burst size (% of granule)');
+    if c == 1
+        ylabel('Fraction of bursts');
+        legend({'granules', 'burst-free copies'}, 'Location', 'east', 'Box', 'off', 'FontSize', 7);
+    end
+    title(sprintf('%s  (n = %d)', conditions{c}, numel(fracReal)), 'Interpreter', 'none', 'FontSize', 8);
+    text(0.97, 0.95, sprintf('median %.1f%% vs %.1f%%\nturnover beyond noise\n%.1f [%.1f, %.1f] %%/h', ...
+        M{c}.sizeGranules, M{c}.sizeCopies, M{c}.turnover, M{c}.turnover_lo, M{c}.turnover_hi), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', 'FontSize', 7);
+    set(gca, 'Box', 'on', 'TickDir', 'in', 'FontSize', 8);
 end
 
-% Perform analysis
-events_d = dictionary;
-k_d = dictionary;
-lam_d = dictionary;
-MSE_d = dictionary;
-[timeBetweenPos, timeBetweenNeg, ampPos, ampNeg, ampVar, eventsPerSignal] = ...
-        analysis(signals, backgrounds, timeVecTotal, ...
-        movingAverageWindowSpan, stringencyParameter, plotMin, plotMax);
-
-% Remove the -Inf placeholder used to initialize the variable
-ampPos = ampPos(2:end);
-ampNeg = ampNeg(2:end);
-ampVar = ampVar(2:end);
-
-fprintf('  • Found %d positive burst events: \n', length(ampPos));
-fprintf('  • Found %d unclassified events: \n', length(ampVar));
-fprintf('  • Found %d negative burst events: \n', length(ampNeg));
-
-timeBetweenPos = timeBetweenPos(2:end);
-timeBetweenNeg = timeBetweenNeg(2:end);    
-
-figure;
-histogram(ampVar(abs(ampVar)<1500),50);
-ylabel('Counts');
-xlabel('Intesity [A.U]');
-title('Quiescent Amplitudes');
-
-
-% Plot histogram of all amplitudes 
-figure; 
-histogram(ampVar(abs(ampVar)<3000),'FaceColor','b','BinWidth',100);
-hold on;
-histogram(ampPos(ampPos<3000),'FaceColor','g','BinWidth',100); 
-histogram(ampNeg(abs(ampNeg)<3000),'FaceColor','r','BinWidth',100);
-ylabel('Counts'); xlim([-3000,3000])
-title('Segment amplitudes','FontSize',12);
-xlabel('Amplitudes [A.U]','FontSize',12);
-
-% Plot boxplots of durations between burst events 
-figure;
-plot_var = [timeBetweenPos;timeBetweenNeg];
-group_var = zeros(length(plot_var),1);
-group_var(1:length(timeBetweenPos))=2;
-group_var(length(timeBetweenPos)+1:end)=3;
-boxplot(plot_var,group_var);
-xticklabels({'Positive','Negative'});
-ylabel('Time [min]');
-title('Time between burst events');
-
-
-lambda = 1:5;
-K0Vector = 1:500; % Experimental data is noisy by nature, using standard errors will lead to unreasonably large grids
-
-% Poisson analysis on positive amplitudes
-[~, ~, ~, ~, ~, w_score] = modifiedPoissonFit(rmoutliers(ampPos,"percentiles",[0,90]),lambda,K0Vector,10,'Positive amplitudes');
-
-% Final ranking of lambdas
-for ll = 1:length(lambda)
-    [min_w_vec{ll}, min_w_k0{ll}] = min(w_score(ll,:));
+% Summary of all conditions (95% CI over replicates)
+figure('Name', 'Summary', 'Units', 'inches', 'Position', [1 1 7 2.6], 'Color', 'w');
+tiledlayout(1, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
+measures = {'meanBurst', 'turnover', 'net'};
+labels = {'Mean burst size, \lambda\cdotk_0 (a.u.)', 'Turnover beyond noise (%/h)', 'Net change beyond bleaching (10^{-2} h^{-1})'};
+for j = 1:3
+    nexttile; hold on;
+    for c = 1:nCond
+        y = M{c}.(measures{j});
+        lo = M{c}.([measures{j} '_lo']);
+        hi = M{c}.([measures{j} '_hi']);
+        bar(c, y, 0.6, 'FaceColor', [0.6 0.6 0.6], 'EdgeColor', 'none');
+        errorbar(c, y, y - lo, hi - y, 'k', 'LineStyle', 'none', 'LineWidth', 0.8, 'CapSize', 3);
+    end
+    yline(0, 'k', 'LineWidth', 0.5);
+    set(gca, 'XTick', 1:nCond, 'XTickLabel', conditions, 'TickLabelInterpreter', 'none', 'Box', 'on', 'TickDir', 'in', 'FontSize', 8);
+    xlim([0.4, nCond + 0.6]);
+    ylabel(labels{j});
 end
-
-[min_w_scores, min_w_idx] = sort(cell2mat(min_w_vec));
-min_w_lambda = lambda(min_w_idx);
-min_w_k0 = min_w_k0(min_w_idx);
-
-fprintf('Positive amplitudes results:\n')
-for ww = 1:length(lambda)
-    fprintf('  #%d: lambda=%d, k0=%d, WS=%g\n', [ww,min_w_lambda(ww),min_w_k0{ww},round(min_w_scores(ww),2,"significant")]);
-end
-
-% Poisson analysis on negative amplitudes
-[~, ~, ~, ~, ~, w_score] = modifiedPoissonFit(rmoutliers(abs(ampNeg),"percentiles",[0,90]),lambda,K0Vector,10,'Negative amplitudes');
-
-% Final ranking of lambdas
-for ll = 1:length(lambda)
-    [min_w_vec{ll}, min_w_k0{ll}] = min(w_score(ll,:));
-end
-
-[min_w_scores, min_w_idx] = sort(cell2mat(min_w_vec));
-min_w_lambda = lambda(min_w_idx);
-min_w_k0 = min_w_k0(min_w_idx);
-
-fprintf('Negative amplitudes results:\n')
-for ww = 1:length(lambda)
-    fprintf('  #%d: lambda=%d, k0=%d, WS=%g\n', [ww,min_w_lambda(ww),min_w_k0{ww},round(min_w_scores(ww),2,"significant")]);
-end
-
